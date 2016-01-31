@@ -1,0 +1,335 @@
+<html>
+<head>
+  <link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+
+<div id="image-app">
+  <div id="images" class="app-pane clearfix">
+  </div>
+  <div id="image" class="app-pane">
+  </div>
+  <div id="upload" class="app-pane">
+    <div class="buttons">
+      <a href="/"><i class="icon-th icon-2x"></i></a>
+    </div>
+
+    <h1>Upload</h1>
+
+    <div id="dropbox" class="clearfix">
+      <span class="message">
+        Drop files here to upload. <br />
+      </span>
+    </div>
+  </div>
+</div>
+
+<script type="text/template" id="images-template">
+<div class="buttons">
+  <a id="upload-btn" href="/upload"><i class="icon-upload icon-2x"></i></a>
+</div>
+<div id="image-thumbs"></div>
+</script>
+
+<script type="text/template" id="image-template">
+<div class="buttons">
+  <a href="/"><i class="icon-th icon-2x"></i></a>
+</div>
+<div>
+  <img src="<%= original %>">
+</div>
+</script>
+
+<script type="text/template" id="thumb-template">
+<a href="/photos/<%= id %>">
+  <img src="<%= square300 %>">
+</a>
+</script>
+
+<div id="precache" style="display: none">
+</div>
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.0/jquery.min.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/underscore.js/1.4.4/underscore-min.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/backbone.js/1.0.0/backbone-min.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/backbone-localstorage.js/1.1.0/backbone.localStorage-min.js"></script>
+
+<script type="text/javascript" src="//revore.s3.amazonaws.com/vendor/jquery.filedrop-0.min.js"></script>
+<script type="text/javascript" src="//revore.s3.amazonaws.com/vendor/dropbox-0.min.js"></script>
+
+<script type="text/javascript" src="//revore.s3.amazonaws.com/vendor/keymaster.min.js"></script>
+
+<style type="text/css">
+@import url("//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.1/css/bootstrap-combined.min.css");
+@import url("//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.1/css/bootstrap-responsive.min.css");
+@import url("//netdna.bootstrapcdn.com/font-awesome/3.0.2/css/font-awesome.css");
+
+body {
+  padding: 1em;
+}
+
+#images {
+  margin-bottom: 8em;
+}
+
+.image-thumb {
+  margin: 10px;
+  float: left;
+}
+
+.buttons {
+  margin-bottom: 0.5em;
+}
+
+a, a:hover, a:visited {
+  color: #333333;
+  text-decoration: none;
+}
+
+.viewer-notowner #upload-btn {
+  display: none;
+}
+
+.viewer-owner #upload-btn {
+  display: block;
+}
+
+#dropbox {
+  padding: 1em;
+  background-color: #eee;
+}
+
+</style>
+
+<script type="text/javascript">
+(function() {
+  var Image, ImageRouter, ImageView, Images, ImagesCollection, ImagesView, ThumbView, currentPhotoIndex, imagesView, logDebug, router;
+
+  logDebug = false;
+
+  Image = Backbone.Model.extend();
+
+  ImagesCollection = Backbone.Collection.extend({
+    model: Image,
+    url: '/files'
+  });
+
+  Images = new ImagesCollection([]);
+
+  Images.fetch();
+
+  if (logDebug) {
+    console.log("images", Images);
+  }
+
+  ThumbView = Backbone.View.extend({
+    className: "image-thumb",
+    template: _.template($('#thumb-template').html()),
+    render: function() {
+      if (logDebug) {
+        console.log("render thumbview");
+      }
+      this.$el.html(this.template(this.model.toJSON()));
+      return this;
+    },
+    initialize: function() {
+      if (logDebug) {
+        console.log("init thumbview");
+      }
+      return this.listenTo(this.model, 'change', this.render);
+    }
+  });
+
+  ImageView = Backbone.View.extend({
+    el: '#image',
+    className: "app-pane",
+    imageTemplate: _.template($('#image-template').html()),
+    render: function() {
+      if (logDebug) {
+        console.log("render imageview");
+      }
+      this.$el.html(this.imageTemplate(this.model.toJSON()));
+      return this;
+    },
+    initialize: function() {
+      if (logDebug) {
+        console.log("init imageview", this.model);
+      }
+      return this.listenTo(this.model, 'change', this.render);
+    }
+  });
+
+  ImagesView = Backbone.View.extend({
+    el: '#images',
+    className: "app-pane",
+    imagesTemplate: _.template($('#images-template').html()),
+    render: function() {
+      if (logDebug) {
+        console.log("images view render", this.imagesTemplate());
+      }
+      $("#images").html(this.imagesTemplate());
+      $("#image-thumbs").html("");
+      this.$el.show();
+      return this;
+    },
+    initialize: function() {
+      if (logDebug) {
+        console.log("images view initialize");
+      }
+      this.listenTo(Images, 'reset', this.addAll);
+      this.listenTo(Images, 'add', this.redo);
+      this.listenTo(Images, 'remove', this.redo);
+      return this.redo();
+    },
+    redo: function() {
+      this.render();
+      return this.addAll();
+    },
+    addOne: function(image) {
+      var view;
+      if (logDebug) {
+        console.log("image view add one", image);
+      }
+      view = new ThumbView({
+        model: image
+      });
+      return $("#image-thumbs").append(view.render().el);
+    },
+    addAll: function() {
+      if (logDebug) {
+        console.log("image view add all", Images.length);
+      }
+      $("#image-thumbs").html('');
+      return Images.each(this.addOne, this);
+    }
+  });
+
+  imagesView = new ImagesView();
+
+  currentPhotoIndex = null;
+
+  ImageRouter = Backbone.Router.extend({
+    routes: {
+      "": "photos",
+      "photos/:id": "photoShow",
+      "upload": "upload"
+    },
+    photos: function() {
+      if (logDebug) {
+        console.log("render photos");
+      }
+      $(".app-pane").hide();
+      return $("#images").show();
+    },
+    photoShow: function(id) {
+      var image, view;
+      $(".app-pane").hide();
+      $("#image").show();
+      if (logDebug) {
+        console.log("id", id);
+      }
+      image = Images.findWhere({
+        id: id
+      });
+      if (logDebug) {
+        console.log("image", image);
+      }
+      currentPhotoIndex = Images.indexOf(image);
+      view = new ImageView({
+        model: image
+      });
+      view.render();
+      if (currentPhotoIndex + 1 < Images.length) {
+        image = Images.at(currentPhotoIndex + 1);
+        if (logDebug) {
+          console.log(image.get("original"));
+        }
+        return $("#precache").html("<img src='" + (image.get("original")) + "'>");
+      }
+    },
+    upload: function() {
+      $(".app-pane").hide();
+      return $("#upload").show();
+    }
+  });
+
+  router = new ImageRouter();
+
+  $("title").text("Gallery");
+
+  key("up", function() {
+    return router.navigate("", {
+      trigger: true
+    });
+  });
+
+  key("down", function() {
+    var image;
+    currentPhotoIndex || (currentPhotoIndex = 0);
+    image = Images.at(currentPhotoIndex);
+    return router.navigate("photos/" + image.id, {
+      trigger: true
+    });
+  });
+
+  key("right", function() {
+    var image;
+    if (currentPhotoIndex == null) {
+      currentPhotoIndex = -1;
+    }
+    if (currentPhotoIndex + 1 === Images.length) {
+      return;
+    }
+    if (logDebug) {
+      console.log("you pressed right!", currentPhotoIndex + 1);
+    }
+    image = Images.at(currentPhotoIndex + 1);
+    return router.navigate("photos/" + image.id, {
+      trigger: true
+    });
+  });
+
+  key("left", function() {
+    var image;
+    if (currentPhotoIndex === 0) {
+      return;
+    }
+    if (logDebug) {
+      console.log("you pressed left!", currentPhotoIndex - 1);
+    }
+    image = Images.at(currentPhotoIndex - 1);
+    return router.navigate("photos/" + image.id, {
+      trigger: true
+    });
+  });
+
+  $(document).on("click", "a", function(evt) {
+    var href, protocol;
+    href = $(this).attr("href");
+    protocol = this.protocol + "//";
+    if (href.slice(protocol.length) !== protocol) {
+      evt.preventDefault();
+      return router.navigate(href, true);
+    }
+  });
+
+  setTimeout(function() {
+    if (window.location.pathname !== "/") {
+      console.log(window.location.pathname.slice(1));
+      router.navigate(window.location.pathname.slice(1), {
+        trigger: true
+      });
+    }
+    return Backbone.history.start({
+      pushState: true,
+      hashChange: false
+    });
+  }, 500);
+
+}).call(this);
+
+
+</script>
+
+</body>
+</html>
